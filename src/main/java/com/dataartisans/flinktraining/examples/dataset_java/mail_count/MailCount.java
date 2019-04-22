@@ -29,81 +29,91 @@ import org.apache.flink.util.Collector;
 /**
  * Java reference implementation for the "Mail Count" exercise of the Flink training.
  * The task of the exercise is to count the number of mails sent for each month and email address.
- *
+ * <p>
+ * .includeFields("011")
+ * MapFunction
+ * GroupReduceFunction
+ * <p>
  * Required parameters:
- *   --input path-to-input-directory
- *
+ * --input path-to-input-directory
  */
 public class MailCount {
 
-	public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
 
-		// parse parameters
-		ParameterTool params = ParameterTool.fromArgs(args);
-		String input = params.getRequired("input");
+        // parse parameters
+        ParameterTool params = ParameterTool.fromArgs(args);
+//		String input = params.getRequired("input");
+        String input = "/Users/shaozhipeng/Resources/2019/trainingData/flinkMails.gz";
 
-		// obtain an execution environment
-		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+        // obtain an execution environment
+        ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-		// read the "time" and "sender" fields of the input data set (field 2 and 3) as Strings
-		DataSet<Tuple2<String, String>> mails =
-			env.readCsvFile(input)
-				.lineDelimiter(MBoxParser.MAIL_RECORD_DELIM)
-				.fieldDelimiter(MBoxParser.MAIL_FIELD_DELIM)
-				.includeFields("011")
-				.types(String.class, String.class);
+        // read the "time" and "sender" fields of the input data set (field 2 and 3) as Strings
+        DataSet<Tuple2<String, String>> mails =
+                env.readCsvFile(input)
+                        // public final static String MAIL_RECORD_DELIM = "##//##";
+                        .lineDelimiter(MBoxParser.MAIL_RECORD_DELIM)
+                        // public final static String MAIL_FIELD_DELIM = "#|#";
+                        .fieldDelimiter(MBoxParser.MAIL_FIELD_DELIM)
+                        // take the second and the third field
+                        .includeFields("011")
+                        .types(String.class, String.class);
 
-		mails
-				// extract the month from the time field and the email address from the sender field
-				.map(new MonthEmailExtractor())
-				// group by month and email address and count number of records per group
-				.groupBy(0, 1).reduceGroup(new MailCounter())
-				// print the result
-				.print();
+        mails
+                // extract the month from the time field and the email address from the sender field
+                .map(new MonthEmailExtractor())
+                // group by month and email address and count number of records per group
+                // GroupReduceFunction#Iterable
+                .groupBy(0, 1).reduceGroup(new MailCounter())
+                // print the result
+                .print();
 
-	}
+    }
 
-	/**
-	 * Extracts the month from the time field and the email address from the sender field.
-	 */
-	public static class MonthEmailExtractor implements MapFunction<Tuple2<String, String>, Tuple2<String, String>> {
+    /**
+     * Extracts the month from the time field and the email address from the sender field.
+     */
+    public static class MonthEmailExtractor implements MapFunction<Tuple2<String, String>, Tuple2<String, String>> {
 
-		@Override
-		public Tuple2<String, String> map(Tuple2<String, String> mail) throws Exception {
+        @Override
+        public Tuple2<String, String> map(Tuple2<String, String> mail) throws Exception {
+            // (2014-09-10-18:43:16,"Anirvan Basu" <Anirvan.Basu@alumni.INSEAD.edu>)
+//            System.out.println("mail: " + mail);
 
-			// extract year and month from time string
-			String month = mail.f0.substring(0, 7);
-			// extract email address from the sender
-			String email = mail.f1.substring(mail.f1.lastIndexOf("<") + 1, mail.f1.length() - 1);
+            // extract year and month from time string
+            String month = mail.f0.substring(0, 7);
+            // extract email address from the sender
+            String email = mail.f1.substring(mail.f1.lastIndexOf("<") + 1, mail.f1.length() - 1);
 
-			return new Tuple2<>(month, email);
-		}
-	}
+            return new Tuple2<>(month, email);
+        }
+    }
 
-	/**
-	 * Counts the number of mails per month and email address.
-	 */
-	public static class MailCounter implements GroupReduceFunction<Tuple2<String ,String>, Tuple3<String ,String, Integer>> {
+    /**
+     * Counts the number of mails per month and email address.
+     */
+    public static class MailCounter implements GroupReduceFunction<Tuple2<String, String>, Tuple3<String, String, Integer>> {
 
-		@Override
-		public void reduce(Iterable<Tuple2<String, String>> mails, Collector<Tuple3<String, String, Integer>> out) throws Exception {
+        @Override
+        public void reduce(Iterable<Tuple2<String, String>> mails, Collector<Tuple3<String, String, Integer>> out) throws Exception {
 
-			String month = null;
-			String email = null;
-			int cnt = 0;
+            String month = null;
+            String email = null;
+            int cnt = 0;
 
-			// count number of tuples
-			for(Tuple2<String, String> m : mails) {
-				// remember month and email address
-				month = m.f0;
-				email = m.f1;
-				// increase count
-				cnt++;
-			}
+            // count number of tuples
+            for (Tuple2<String, String> m : mails) {
+                // remember month and email address
+                month = m.f0;
+                email = m.f1;
+                // increase count
+                cnt++;
+            }
 
-			// emit month, email address, and count
-			out.collect(new Tuple3<>(month, email, cnt));
-		}
-	}
+            // emit month, email address, and count
+            out.collect(new Tuple3<>(month, email, cnt));
+        }
+    }
 
 }

@@ -31,96 +31,115 @@ import org.apache.flink.util.Collector;
  * Java reference implementation for the "Reply Graph" exercise of the Flink training.
  * The task of the exercise is to enumerate the reply connection between two email addresses in
  * Flink's developer mailing list and count the number of connections between two email addresses.
- *
+ * <p>
+ * enumerate 列举 枚举 计算
+ * .includeFields("101001")
+ * MapFunction
+ * FilterFunction
+ * GroupReduceFunction
+ * <p>
  * Required parameters:
- *   --input path-to-input-directory
+ * --input path-to-input-directory
  */
 public class ReplyGraph {
 
-	public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
 
-		// parse parameters
-		ParameterTool params = ParameterTool.fromArgs(args);
-		String input = params.getRequired("input");
+        // parse parameters
+        ParameterTool params = ParameterTool.fromArgs(args);
+//		String input = params.getRequired("input");
+        String input = "/Users/shaozhipeng/Resources/2019/trainingData/flinkMails.gz";
 
-		// obtain an execution environment
-		ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+        // obtain an execution environment
+        ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-		// read messageId, sender, and reply-to fields from the input data set
-		DataSet<Tuple3<String, String, String>> mails =
-				env.readCsvFile(input)
-						.lineDelimiter(MBoxParser.MAIL_RECORD_DELIM)
-						.fieldDelimiter(MBoxParser.MAIL_FIELD_DELIM)
-						// messageId at position 0, sender at 2, reply-to at 5
-						.includeFields("101001")
-						.types(String.class, String.class, String.class);
+        // read messageId, sender, and reply-to fields from the input data set
+        DataSet<Tuple3<String, String, String>> mails =
+                env.readCsvFile(input)
+                        .lineDelimiter(MBoxParser.MAIL_RECORD_DELIM)
+                        .fieldDelimiter(MBoxParser.MAIL_FIELD_DELIM)
+                        // messageId at position 0, sender at 2, reply-to at 5
+                        .includeFields("101001")
+                        .types(String.class, String.class, String.class);
 
-		// extract email addresses and filter out mails from bots
-		DataSet<Tuple3<String, String, String>> addressMails = mails
-				.map(new EmailExtractor())
-				.filter(new ExcludeEmailFilter("git@git.apache.org"))
-				.filter(new ExcludeEmailFilter("jira@apache.org"));
+        // extract email addresses and filter out mails from bots
+        DataSet<Tuple3<String, String, String>> addressMails = mails
+                .map(new EmailExtractor())
+                .filter(new ExcludeEmailFilter("git@git.apache.org"))
+                .filter(new ExcludeEmailFilter("jira@apache.org"));
 
-		// construct reply connections by joining on messageId and reply-To
-		DataSet<Tuple2<String, String>> replyConnections = addressMails
-				.join(addressMails).where(2).equalTo(0).projectFirst(1).projectSecond(1);
+        // construct reply connections by joining on messageId and reply-To
+        // 自关联
+        DataSet<Tuple2<String, String>> replyConnections = addressMails
+                .join(addressMails)
+                // key of the first input (addressMails1) reply-to address
+                .where(2)
+                // key of the second input (addressMails2) messageId
+                .equalTo(0)
+                // sender at 2 of the first input (addressMails1)
+                .projectFirst(1)
+                // sender at 2 of the second input (addressMails2)
+                .projectSecond(1);
 
-		// count reply connections for each pair of email addresses
-		replyConnections
-				.groupBy(0, 1).reduceGroup(new ConnectionCounter())
-				.print();
+        // count reply connections for each pair of email addresses
+        replyConnections
+                .groupBy(0, 1).reduceGroup(new ConnectionCounter())
+                .print();
 
-	}
+    }
 
-	/**
-	 * Extracts the email address from the sender field
-	 */
-	public static class EmailExtractor implements MapFunction<Tuple3<String, String, String>, Tuple3<String, String, String>> {
+    /**
+     * Extracts the email address from the sender field
+     */
+    public static class EmailExtractor implements MapFunction<Tuple3<String, String, String>, Tuple3<String, String, String>> {
 
-		@Override
-		public Tuple3<String, String, String> map(Tuple3<String, String, String> mail) throws Exception {
-			mail.f1 = mail.f1.substring(mail.f1.lastIndexOf("<") + 1, mail.f1.length() - 1);
-			return mail;
-		}
-	}
+        @Override
+        public Tuple3<String, String, String> map(Tuple3<String, String, String> mail) throws Exception {
+            // (<20150514095824.39711DFC81@git1-us-west.apache.org>,andralungu <git@git.apache.org>,<git-pr-649-flink@git.apache.org>)
+//            System.out.println("mail: " + mail);
+            mail.f1 = mail.f1.substring(mail.f1.lastIndexOf("<") + 1, mail.f1.length() - 1);
+            return mail;
+        }
+    }
 
-	/**
-	 * Filter records for a specific email address
-	 */
-	public static class ExcludeEmailFilter implements FilterFunction<Tuple3<String, String, String>> {
+    /**
+     * Filter records for a specific email address
+     */
+    public static class ExcludeEmailFilter implements FilterFunction<Tuple3<String, String, String>> {
 
-		private String filterEmail;
+        private String filterEmail;
 
-		public ExcludeEmailFilter() {}
+        public ExcludeEmailFilter() {
+        }
 
-		public ExcludeEmailFilter(String filterMail) {
-			this.filterEmail = filterMail;
-		}
+        public ExcludeEmailFilter(String filterMail) {
+            this.filterEmail = filterMail;
+        }
 
-		@Override
-		public boolean filter(Tuple3<String, String, String> mail) throws Exception {
-			return !mail.f1.equals(filterEmail);
-		}
-	}
+        @Override
+        public boolean filter(Tuple3<String, String, String> mail) throws Exception {
+            return !mail.f1.equals(filterEmail);
+        }
+    }
 
-	/**
-	 * Count the number of records per group
-	 */
-	public static class ConnectionCounter implements GroupReduceFunction<Tuple2<String,String>, Tuple3<String, String, Integer>> {
+    /**
+     * Count the number of records per group
+     */
+    public static class ConnectionCounter implements GroupReduceFunction<Tuple2<String, String>, Tuple3<String, String, Integer>> {
 
-		Tuple3<String, String, Integer> outT = new Tuple3<>();
+        Tuple3<String, String, Integer> outT = new Tuple3<>();
 
-		@Override
-		public void reduce(Iterable<Tuple2<String, String>> cs, Collector<Tuple3<String, String, Integer>> out) {
-			outT.f2 = 0;
+        @Override
+        public void reduce(Iterable<Tuple2<String, String>> cs, Collector<Tuple3<String, String, Integer>> out) {
+            outT.f2 = 0;
 
-			for(Tuple2<String, String> c : cs) {
-				outT.f0 = c.f0;
-				outT.f1 = c.f1;
-				outT.f2 += 1;
-			}
-			out.collect(outT);
-		}
-	}
+            for (Tuple2<String, String> c : cs) {
+                outT.f0 = c.f0;
+                outT.f1 = c.f1;
+                outT.f2 += 1;
+            }
+            out.collect(outT);
+        }
+    }
 
 }
