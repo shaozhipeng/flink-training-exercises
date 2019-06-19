@@ -13,6 +13,7 @@ import java.util.LinkedList;
 
 /**
  * Keyed ValueState Example
+ * 可以在此基础上做CEP
  */
 public class MovingAverageKeyedStateExercise {
 
@@ -33,8 +34,8 @@ public class MovingAverageKeyedStateExercise {
         DataStream<Tuple2<String, Double>> smoothed = input.keyBy(0).map(new Smoother());
         smoothed.print();
         /**
-         * 2> (S001,0.0)
-         * 2> (S001,0.0)
+         * 2> (S001,2.0)
+         * 2> (S001,3.5)
          * 2> (S001,7.0)
          */
 
@@ -55,6 +56,7 @@ public class MovingAverageKeyedStateExercise {
         public Tuple2<String, Double> map(Tuple2<String, Double> item) throws Exception {
             // access the state for this key
             MovingAverage average = averageState.value();
+            System.out.println("average: " + average);
 
             // create a new MovingAverage (with window size 2) if none exists for this key
             if (average == null) {
@@ -62,11 +64,11 @@ public class MovingAverageKeyedStateExercise {
             }
 
             // add this event to the moving average
-            average.add(item.f1);
+            Double averageValue = average.add(item.f1);
             averageState.update(average);
 
             // return the smoothed result
-            return new Tuple2(item.f0, average.getAverage());
+            return new Tuple2(item.f0, averageValue);
         }
     }
 
@@ -76,7 +78,6 @@ class MovingAverage {
     double sum;
     int size;
     LinkedList<Double> list;
-    double average;
 
     /**
      * 构造方法
@@ -95,10 +96,7 @@ class MovingAverage {
             return sum / list.size();
         }
         sum -= list.poll();
-        return average = sum / size;
+        return sum / size;
     }
 
-    public double getAverage() {
-        return average;
-    }
 }
